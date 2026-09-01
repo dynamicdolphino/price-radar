@@ -34,6 +34,8 @@ def parse_price_str(s):
 
 def from_metadata(meta):
     for key in META_PRICE_KEYS:
+        if key == "twitter:data1" and meta.get("twitter:label1") not in ("Preis", "Price"):
+            continue
         price = parse_price_str(meta.get(key))
         if price is not None:
             return price
@@ -86,13 +88,18 @@ def extract(page):
     meta = page.get("metadata") or {}
     html = page.get("html") or page.get("rawHtml") or ""
 
-    price, currency, available = from_jsonld(html)
-    if price is not None:
-        return {"price": price, "currency": currency, "available": available, "source": "jsonld"}
+    jl_price, jl_currency, jl_available = from_jsonld(html)
+    meta_price = from_metadata(meta)
 
-    price = from_metadata(meta)
-    if price is not None:
-        currency = meta.get("og:price:currency") or meta.get("product:price:currency") or "EUR"
-        return {"price": price, "currency": currency, "available": None, "source": "meta"}
-
+    # Meta tags carry the price actually displayed (incl. sale discounts) on
+    # Zalando, while its JSON-LD holds the list price — so meta wins on conflict.
+    if meta_price is not None:
+        currency = (jl_currency or meta.get("og:price:currency")
+                    or meta.get("product:price:currency") or "EUR")
+        source = "meta" if jl_price in (None, meta_price) else "meta>jsonld"
+        return {"price": meta_price, "currency": currency,
+                "available": jl_available, "source": source}
+    if jl_price is not None:
+        return {"price": jl_price, "currency": jl_currency,
+                "available": jl_available, "source": "jsonld"}
     return {"price": None, "currency": None, "available": None, "source": "none"}

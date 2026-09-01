@@ -38,6 +38,21 @@ python3 src/scrape.py && python3 src/dashboard.py
 
 4. Open `dashboard.html`.
 
+## Dashboard & export
+
+Live dashboard (GitHub Pages, republished by every daily run):
+**https://dynamicdolphino.github.io/price-radar/**
+
+Price history export (linked from the dashboard header):
+- `history.csv` — standard CSV (comma separator, dot decimals)
+- `history_excel.csv` — opens cleanly in German Excel (semicolon separator,
+  comma decimals, UTF-8 BOM)
+
+Regenerate locally with `python3 src/export.py`.
+
+Note: Pages sites are always public, so the repo is public and the dashboard
+shows only publicly available marketplace prices (owner's decision, 2026-09-01).
+
 ## Daily automation (GitHub Actions — primary)
 
 The workflow in `.github/workflows/daily.yml` runs every day at 06:30 UTC on
