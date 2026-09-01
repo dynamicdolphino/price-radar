@@ -1,6 +1,6 @@
 # Pricing Tool
 
-Tracks the prices of our own shop products across marketplaces (MVP: Zalando),
+Tracks the prices of our own shop products across marketplaces (currently Zalando and Otto),
 stores a daily price history in SQLite, and renders a self-contained HTML dashboard.
 Pure Python stdlib + the Firecrawl scrape API. No AI/LLM anywhere in the running
 pipeline — price extraction is deterministic (JSON-LD / meta tags).
@@ -22,9 +22,38 @@ dashboard.html                      (self-contained: table + history charts)
 - `products.csv` — one row per own product: `sku, ean, name, own_price_eur`
 - `matches.csv` — one row per (product × marketplace): `sku, marketplace, url`.
   Matching is a one-time step per product; the daily run only scrapes stored URLs.
-- Extraction order per page: JSON-LD product offers → og/twitter price meta tags.
-  Zalando serves the price via meta tags (`twitter:data1`), verified 2026-09-01,
-  1 Firecrawl credit per page on the basic proxy.
+- Extraction order per page: og/twitter price meta tags → JSON-LD product offers
+  (meta wins on conflict because it carries the displayed sale price).
+
+### Marketplaces (verified 2026-09-01, 1 Firecrawl credit per page on the basic proxy)
+
+| Marketplace | Price source on the page | Notes |
+|---|---|---|
+| `zalando` | meta `twitter:data1` (label "Preis") | JSON-LD holds the list price, meta the displayed price |
+| `otto` | JSON-LD `Product.offers` + meta `og:price:amount` ("29,99 €") | Track the canonical product URL (no `variationId`); the page then shows the default variation, whose price can differ per size/colour |
+
+Marketplaces evaluated and rejected for deterministic extraction: Amazon (buy-box
+price depends on size and third-party seller, no price meta/JSON-LD), About You
+(no price meta tags, public product API answers 403), Galeria (works via
+`og:price:amount`, but carries no adidas Stan Smith), Foot Locker / Snipes / JD
+Sports (adidas only, limited colourways).
+
+### Catalog notes
+
+- `SCH-173983-803` (Schiesser 95/5 Organic Cotton shorts, 3-pack, dark blue,
+  manufacturer no. 173983-803): own price 39.95 EUR taken from schiesser.com.
+  EANs are per size (e.g. 4007065791955, 4007065792037), so the `ean` column is
+  left empty. Otto match confirmed via idealo ("otto.de … (173983) blau, 29,99 €").
+  Zalando does **not** list the single-colour dark-blue 3-pack (only the
+  "95/5 ESSENTIALS" series and multi-colour "95/5 COTTON" packs), so there is no
+  Zalando row. Galeria carries the exact EAN
+  (`https://www.galeria.de/produkt/schiesser-retro-short-pant-3er-pack-95-5-organic-cotton-4007065791955`)
+  and can be added as a further marketplace if wanted.
+- The adidas Stan Smith demo rows have no second marketplace yet: none of Otto,
+  Galeria, About You, Foot Locker, Snipes or JD Sports lists the three Zalando
+  colourways (white/core black, white/green, white/crystal sky) with a
+  deterministic price. Amazon lists all three (FX5501, FX5502, B07XLNGL2V) but
+  only with per-size/seller prices.
 
 ## Setup
 
