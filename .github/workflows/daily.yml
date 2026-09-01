@@ -1,0 +1,34 @@
+name: daily-price-scrape
+
+on:
+  schedule:
+    - cron: "30 6 * * *" # 06:30 UTC = 08:30 CEST / 07:30 CET
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scrape prices and rebuild dashboard
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: |
+          python3 src/scrape.py
+          python3 src/dashboard.py
+
+      - name: Commit snapshot and dashboard
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pricing.db dashboard.html
+          git diff --cached --quiet || git commit -m "chore: daily price snapshot"
+          git push

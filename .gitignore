@@ -1,0 +1,5 @@
+# pricing.db and dashboard.html are intentionally tracked: the repo is the
+# persistent store the GitHub Actions cron commits into.
+.env
+scrape.log
+__pycache__/
