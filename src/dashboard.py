@@ -137,7 +137,8 @@ def build():
 <style>{CSS}</style>
 <div class="wrap">
 <h1>Preisradar</h1>
-<div class="sub">Eigener Preis vs. Marktplätze · Stand: {now} · Delta negativ (rot) = Marktplatz ist günstiger</div>
+<div class="sub">Eigener Preis vs. Marktplätze · Stand: {now} · Delta negativ (rot) = Marktplatz ist günstiger
+· Export: <a href="history.csv">CSV</a> · <a href="history_excel.csv">Excel-CSV</a></div>
 <div class="scroll"><table>
 <tr><th class="name">Produkt</th><th>Eigener Preis</th>{mp_headers}</tr>
 {''.join(rows_html)}

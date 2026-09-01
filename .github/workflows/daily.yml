@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 src/scrape.py
           python3 src/dashboard.py
+          python3 src/export.py
 
       - name: Commit snapshot and dashboard
         run: |
@@ -32,3 +33,16 @@ jobs:
           git add pricing.db dashboard.html
           git diff --cached --quiet || git commit -m "chore: daily price snapshot"
           git push
+
+      - name: Publish dashboard to gh-pages
+        run: |
+          mkdir -p /tmp/site
+          cp dashboard.html /tmp/site/index.html
+          cp history.csv history_excel.csv /tmp/site/
+          cd /tmp/site
+          git init -b gh-pages -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "chore: publish dashboard"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages

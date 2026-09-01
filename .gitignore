@@ -3,3 +3,5 @@
 .env
 scrape.log
 __pycache__/
+history.csv
+history_excel.csv
