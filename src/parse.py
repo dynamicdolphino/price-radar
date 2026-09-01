@@ -45,10 +45,15 @@ def from_metadata(meta):
 def _iter_jsonld(html):
     pattern = r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>"
     for m in re.finditer(pattern, html, re.S | re.I):
-        try:
-            yield json.loads(htmllib.unescape(m.group(1)))
-        except json.JSONDecodeError:
-            continue
+        raw = m.group(1).strip()
+        # Try the block verbatim first: Otto embeds entity-escaped quotes
+        # (&#34;) inside JSON strings, and unescaping them first breaks the JSON.
+        for candidate in (raw, htmllib.unescape(raw)):
+            try:
+                yield json.loads(candidate)
+                break
+            except json.JSONDecodeError:
+                continue
 
 
 def _walk(node):
