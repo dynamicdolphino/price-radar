@@ -1,0 +1,4 @@
+date,sku,product,marketplace,price_eur,own_price_eur,delta_pct
+2026-09-01,DEMO-001,adidas Stan Smith white/core black,zalando,95.95,89.9,6.73
+2026-09-01,DEMO-002,adidas Stan Smith white/green,zalando,77.0,115.0,-33.04
+2026-09-01,DEMO-003,adidas Stan Smith white/crystal sky,zalando,109.95,105.0,4.71
