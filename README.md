@@ -30,7 +30,7 @@ dashboard.html                      (self-contained: table + history charts)
 | Marketplace | Price source on the page | Notes |
 |---|---|---|
 | `zalando` | meta `twitter:data1` (label "Preis") | JSON-LD holds the list price, meta the displayed price |
-| `otto` | JSON-LD `Product.offers` + meta `og:price:amount` ("29,99 €") | Track the canonical product URL (no `variationId`); the page then shows the default variation, whose price can differ per size/colour |
+| `otto` | JSON-LD `Product.offers` (no price meta tags in the raw HTML) | Track the canonical product URL (no `variationId`); the page then shows the default variation, whose price can differ per size/colour. The JSON-LD also carries the variation's `gtin13` |
 
 Marketplaces evaluated and rejected for deterministic extraction: Amazon (buy-box
 price depends on size and third-party seller, no price meta/JSON-LD), About You
@@ -43,7 +43,7 @@ Sports (adidas only, limited colourways).
 - `SCH-173983-803` (Schiesser 95/5 Organic Cotton shorts, 3-pack, dark blue,
   manufacturer no. 173983-803): own price 39.95 EUR taken from schiesser.com.
   EANs are per size (e.g. 4007065791955, 4007065792037), so the `ean` column is
-  left empty. Otto match confirmed via idealo ("otto.de … (173983) blau, 29,99 €").
+  left empty. Otto match confirmed by the page's JSON-LD `gtin13` 4007065792037 (= 173983-803, size 7) and via idealo.
   Zalando does **not** list the single-colour dark-blue 3-pack (only the
   "95/5 ESSENTIALS" series and multi-colour "95/5 COTTON" packs), so there is no
   Zalando row. Galeria carries the exact EAN
@@ -117,6 +117,14 @@ Actions route is ever unwanted.
 20 products × 5 marketplaces = 100 credits/day ≈ 3,000/month (Firecrawl hobby
 plan ~16 USD/month covers exactly that). `MAX_PAGES_PER_RUN` in `.env` is a hard
 abort guard against runaway runs.
+
+## Debugging a failed extraction
+
+Every match whose price could not be extracted is written to `debug/` (env
+`DEBUG_DUMP_DIR`) as `{sku}_{marketplace}.json` with the fetched metadata and
+HTML; the workflow uploads that folder as the `failed-pages` artifact. Download
+it with `gh run download <run-id> -n failed-pages` and feed it to the parser
+locally instead of spending credits on repeated live fetches.
 
 ## Offline ingest (testing)
 
