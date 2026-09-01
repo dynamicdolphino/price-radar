@@ -23,10 +23,20 @@ jobs:
       - name: Scrape prices and rebuild dashboard
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          DEBUG_DUMP_DIR: debug
         run: |
           python3 src/scrape.py
           python3 src/dashboard.py
           python3 src/export.py
+
+      - name: Upload pages of failed extractions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-pages
+          path: debug/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Commit snapshot and dashboard
         run: |

@@ -52,12 +52,25 @@ def firecrawl_fetch(url, api_key):
     return {"metadata": data.get("metadata") or {}, "html": data.get("rawHtml") or ""}
 
 
+def dump_failure(match, page):
+    """If DEBUG_DUMP_DIR is set, keep the fetched page of a failed extraction so
+    the marketplace's markup can be inspected offline (CI uploads it as an artifact)."""
+    dump_dir = os.environ.get("DEBUG_DUMP_DIR")
+    if not dump_dir:
+        return
+    Path(dump_dir).mkdir(parents=True, exist_ok=True)
+    out = Path(dump_dir) / f"{match['sku']}_{match['marketplace']}.json"
+    out.write_text(json.dumps({"url": match["url"], "metadata": page.get("metadata"),
+                               "html": page.get("html")}, ensure_ascii=False))
+
+
 def record(conn, match, page):
     result = parse.extract(page)
     status = page.get("metadata", {}).get("statusCode")
     error = None
     if result["price"] is None:
         error = f"no price found (http {status}, source={result['source']})"
+        dump_failure(match, page)
     db.add_snapshot(conn, match["id"], result["price"], result["currency"],
                     result["available"], result["source"], error)
     label = f"{match['sku']} @ {match['marketplace']}"
