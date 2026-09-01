@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: daily-scrape
@@ -42,16 +44,14 @@ jobs:
             git push
           }
 
-      - name: Publish dashboard to gh-pages
+      - name: Assemble Pages site
         run: |
-          mkdir -p /tmp/site
-          cp dashboard.html /tmp/site/index.html
-          cp history.csv history_excel.csv /tmp/site/
-          touch /tmp/site/.nojekyll
-          cd /tmp/site
-          git init -b gh-pages -q
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "chore: publish dashboard"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+          mkdir -p site
+          cp dashboard.html site/index.html
+          cp history.csv history_excel.csv site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
