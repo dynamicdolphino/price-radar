@@ -21,7 +21,7 @@ from `PROJECT_PLAN.md`.
 
 ## Decisions so far
 
-- **Marketplaces:** Zalando and Otto are live; Amazon, About You rejected for deterministic extraction (see README "Marketplace notes"). *(2026-09-01)*
+- **Marketplaces:** Zalando, Otto and (since 2026-09-03) Galeria are live; Amazon, About You rejected for deterministic extraction (see README "Marketplace notes"). *(2026-09-01)*
 - **Storage/deploy:** SQLite committed to the repo by the daily GitHub Actions run; dashboard served via GitHub Pages. *(2026-09-01)*
 - **Dashboard:** static HTML with an inline vanilla-JS renderer, no external assets (works offline, no CDN dependency on Pages). One chart per product, every marketplace as its own series, own price as the reference line. Time-range presets, German date/number formats, day counter under/over own price. *(2026-09-03, log entry 1)*
 - **Design source:** the ui-ux-pro-max skill's generic recommendation (glassmorphism, dark-first, Fira Code) was deliberately *not* adopted; its checklist and chart/UX rules (distinct line styles, keyboard access, 4.5:1 contrast, 44 px touch targets) were. *(2026-09-03)*
