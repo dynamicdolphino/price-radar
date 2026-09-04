@@ -88,6 +88,18 @@ token set. `history_excel.csv` now also writes `dd.mm.yyyy` dates (`src/export.p
 - `.claude/launch.json` (git-ignored) starts `python3 -m http.server 8765` for local
   previews.
 
+## Galeria as second marketplace for the Schiesser shorts
+
+User asked mid-session to add Galeria (or another marketplace) for `SCH-173983-803`.
+The Galeria URL with the exact EAN 4007065791955 was already documented in the
+README. A plain `curl` gets HTTP 403 (bot protection) and the Firecrawl MCP's
+metadata block showed no `og:price:amount`, so the row was added to `matches.csv`
+and verified through the real pipeline instead: `gh workflow run daily-price-scrape`
+→ `OK SCH-173983-803 @ galeria: 37.95 EUR`. Same run: Otto answered
+`HTTP Error 500` (Firecrawl fetch error, no debug dump) — logged as BACKLOG B-9.
+Zalando prices moved in that run too (DEMO-002 119,95 €, DEMO-003 87,95 €), which
+is exactly the day-to-day variance the chart is for.
+
 ## Open
 
 See `BACKLOG.md` B-5 (custom date range), B-6 (README screenshots), B-8 (stat card

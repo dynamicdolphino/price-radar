@@ -46,9 +46,9 @@ Sports (adidas only, limited colourways).
   left empty. Otto match confirmed by the page's JSON-LD `gtin13` 4007065792037 (= 173983-803, size 7) and via idealo.
   Zalando does **not** list the single-colour dark-blue 3-pack (only the
   "95/5 ESSENTIALS" series and multi-colour "95/5 COTTON" packs), so there is no
-  Zalando row. Galeria carries the exact EAN
-  (`https://www.galeria.de/produkt/schiesser-retro-short-pant-3er-pack-95-5-organic-cotton-4007065791955`)
-  and can be added as a further marketplace if wanted.
+  Zalando row. **Galeria** is tracked as the second marketplace since 2026-09-03
+  (`https://www.galeria.de/produkt/schiesser-retro-short-pant-3er-pack-95-5-organic-cotton-4007065791955`,
+  exact EAN in the URL; first extraction 37.95 EUR).
 - The adidas Stan Smith demo rows have no second marketplace yet: none of Otto,
   Galeria, About You, Foot Locker, Snipes or JD Sports lists the three Zalando
   colourways (white/core black, white/green, white/crystal sky) with a
