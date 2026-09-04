@@ -1,37 +1,442 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preisradar</title>
 <style>
-:root { --bg:#f6f7f9; --card:#fff; --ink:#1a1d21; --muted:#6b7280; --line:#e5e7eb;
-        --good:#0a7d33; --bad:#c22424; --accent:#1d4ed8; }
+:root {
+  color-scheme: light;
+  --bg:#eef1f5; --card:#ffffff; --card-2:#f6f8fb; --line:#dfe4ea; --line-soft:#edf0f4;
+  --ink:#0f172a; --ink-2:#475569; --ink-3:#66748a;
+  --own:#0f172a; --own-chip:#0f172a; --own-chip-ink:#ffffff;
+  --good:#0ca30c; --good-bg:#e4f5e4; --bad:#d03b3b; --bad-bg:#fbe7e7;
+  --neutral-bg:#e6eaef; --focus:#2a78d6;
+  --s0:#2a78d6; --s1:#eb6834; --s2:#1baf7a; --s3:#eda100;
+  --s4:#e87ba4; --s5:#008300; --s6:#4a3aa7; --s7:#e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:#0f1216; --card:#1a1e24; --card-2:#22272e; --line:#333a44; --line-soft:#272d35;
+    --ink:#f3f5f7; --ink-2:#b9c2ce; --ink-3:#7f8b99;
+    --own:#f3f5f7; --own-chip:#f3f5f7; --own-chip-ink:#0f1216;
+    --good:#3fbf3f; --good-bg:#173a17; --bad:#ef6b6b; --bad-bg:#4a1f1f;
+    --neutral-bg:#2b323b; --focus:#3987e5;
+    --s0:#3987e5; --s1:#d95926; --s2:#199e70; --s3:#c98500;
+    --s4:#d55181; --s5:#008300; --s6:#9085e9; --s7:#e66767;
+  }
+}
 * { box-sizing:border-box; }
-body { margin:0; padding:32px 24px; background:var(--bg); color:var(--ink);
-       font:15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
-.wrap { max-width:1100px; margin:0 auto; }
-h1 { font-size:22px; margin:0 0 4px; }
-.sub { color:var(--muted); margin-bottom:24px; font-size:13px; }
-table { width:100%; border-collapse:collapse; background:var(--card);
-        border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-th, td { padding:10px 14px; text-align:right; border-bottom:1px solid var(--line);
-         white-space:nowrap; }
-th { background:#fafafa; font-size:12px; text-transform:uppercase;
-     letter-spacing:.04em; color:var(--muted); }
-td.name, th.name { text-align:left; white-space:normal; }
-.delta-bad { color:var(--bad); font-weight:600; }
-.delta-good { color:var(--good); }
-.muted { color:var(--muted); }
-.spark { vertical-align:middle; }
-.scroll { overflow-x:auto; }
-.section { margin-top:32px; }
-h2 { font-size:16px; margin:0 0 12px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:10px;
-        padding:16px; margin-bottom:16px; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums; }
+a { color:inherit; }
+.wrap { max-width:1120px; margin:0 auto; padding:28px 20px 64px; }
+@media (max-width:640px) { .wrap { padding:18px 12px 48px; } }
+
+/* header */
+.head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px 24px; margin-bottom:22px; }
+.brand h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-0.03em; line-height:1.1; }
+.brand .tag { margin-top:6px; color:var(--ink-2); font-size:14px; }
+.brand .tag b { color:var(--ink); font-weight:600; }
+.meta { font-size:13px; color:var(--ink-3); text-align:right; }
+.meta a { color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--line); }
+.meta a:hover { color:var(--ink); border-color:var(--ink); }
+@media (max-width:640px) { .meta { text-align:left; } .brand h1 { font-size:26px; } }
+
+/* filter row */
+.filters { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 18px; }
+.filters .lbl { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; }
+.seg { display:inline-flex; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px; gap:2px; }
+.seg button { appearance:none; border:0; background:transparent; color:var(--ink-2); font:inherit; font-size:13px; font-weight:600;
+  padding:6px 13px; border-radius:999px; cursor:pointer; min-height:34px; }
+.seg button:hover { color:var(--ink); background:var(--card-2); }
+.seg button[aria-pressed="true"] { background:var(--ink); color:var(--card); }
+.seg button:focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+.filters .hint { font-size:13px; color:var(--ink-3); }
+.seg .short { display:none; }
+@media (max-width:640px) { .seg { width:100%; } .seg button { flex:1; padding:6px 4px; font-size:12.5px; min-height:42px; } .seg .long { display:none; } .seg .short { display:inline; } }
+
+/* overview table */
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; }
+.overview { padding:0; overflow:hidden; margin-bottom:26px; }
+table { width:100%; border-collapse:collapse; }
+th, td { padding:12px 16px; text-align:right; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+tr:last-child td { border-bottom:0; }
+th { font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; background:var(--card-2); }
+th.name, td.name { text-align:left; }
+td.name .n { font-weight:600; }
+td.name .s { display:block; font-size:12px; color:var(--ink-3); }
+.price { font-size:17px; font-weight:700; letter-spacing:-0.01em; }
+.own-price { font-weight:800; }
+.chip { display:inline-block; font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; margin-top:4px; white-space:nowrap; }
+.chip.bad { color:var(--bad); background:var(--bad-bg); }
+.chip.good { color:var(--good); background:var(--good-bg); }
+.chip.eq { color:var(--ink-2); background:var(--neutral-bg); }
+.since { display:block; font-size:12px; color:var(--ink-3); margin-top:2px; }
+.warn { display:inline-block; font-size:12px; color:var(--bad); }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:-1px; margin-right:6px; }
+@media (max-width:720px) {
+  .overview { background:transparent; border:0; }
+  table, tbody { display:block; }
+  thead { display:none; }
+  tr { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; background:var(--card); border:1px solid var(--line);
+       border-radius:14px; padding:6px 14px; margin-bottom:10px; }
+  td { display:block; border:0; padding:8px 0; text-align:left; }
+  td.name { grid-column:1 / -1; border-bottom:1px solid var(--line-soft); }
+  td.na { display:none; }
+  td[data-h]::before { content:attr(data-h); display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; margin-bottom:2px; }
+}
+
+/* product cards */
+.product { padding:18px 20px 16px; margin-bottom:18px; }
+@media (max-width:640px) { .product { padding:14px 12px 12px; border-radius:12px; } }
+.product-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:6px 16px; margin-bottom:12px; }
+.product-head h2 { margin:0; font-size:17px; font-weight:700; letter-spacing:-0.01em; }
+.product-head .sku { font-size:12px; color:var(--ink-3); }
+.legend { display:flex; flex-wrap:wrap; gap:8px 18px; margin:0 0 10px; font-size:13.5px; }
+.legend .it { display:inline-flex; align-items:center; gap:7px; }
+.legend .key { width:18px; height:0; border-top:3px solid; border-radius:2px; }
+.legend .key.own { border-top-style:solid; border-color:var(--own); }
+.legend .v { font-weight:700; }
+.legend .name { color:var(--ink-2); }
+.chart-wrap { position:relative; }
+.chart { display:block; width:100%; height:auto; overflow:visible; touch-action:pan-y; }
+.chart text { font-family:inherit; }
+.grid line { stroke:var(--line-soft); stroke-width:1; }
+.axis text { fill:var(--ink-3); font-size:11.5px; }
+.axis line { stroke:var(--line); }
+.series path { fill:none; stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round; }
+.series circle { stroke:var(--card); stroke-width:2; }
+.own-line { stroke:var(--own); stroke-width:2; }
+.own-chip rect { fill:var(--own-chip); }
+.own-chip text { fill:var(--own-chip-ink); font-size:11.5px; font-weight:700; }
+.plabel { font-size:11.5px; font-weight:700; fill:var(--ink); paint-order:stroke; stroke:var(--card); stroke-width:4px; stroke-linejoin:round; }
+.plabel.dim { fill:var(--ink-2); font-weight:600; }
+.xhair { stroke:var(--ink-3); stroke-width:1; stroke-dasharray:3 3; pointer-events:none; }
+.hit { fill:transparent; outline:none; }
+.chart:focus-visible { outline:2px solid var(--focus); outline-offset:2px; border-radius:6px; }
+.tip { position:absolute; z-index:5; pointer-events:none; background:var(--card); color:var(--ink); border:1px solid var(--line);
+  border-radius:10px; padding:8px 11px; font-size:13px; box-shadow:0 8px 24px rgba(15,23,42,.12); min-width:150px; display:none; }
+.tip .d { font-size:11.5px; color:var(--ink-3); margin-bottom:5px; font-weight:600; letter-spacing:.02em; }
+.tip .r { display:flex; align-items:center; gap:8px; white-space:nowrap; line-height:1.7; }
+.tip .k { width:14px; border-top:3px solid; border-radius:2px; }
+.tip .k.own { border-color:var(--own); }
+.tip .v { font-weight:700; }
+.tip .n { color:var(--ink-2); }
+.tip .dl { margin-left:auto; font-size:12px; font-weight:700; padding-left:8px; }
+.tip .dl.bad { color:var(--bad); } .tip .dl.good { color:var(--good); } .tip .dl.eq { color:var(--ink-3); }
+.empty { padding:26px 0; color:var(--ink-3); text-align:center; font-size:14px; }
+
+/* day counter */
+.days { margin-top:14px; border-top:1px solid var(--line-soft); padding-top:12px; }
+.days .t { font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; margin-bottom:8px; }
+.dayrow { display:grid; grid-template-columns:minmax(72px, 130px) 1fr; gap:6px 14px; align-items:center; margin-bottom:8px; }
+.dayrow .who { font-size:13px; font-weight:600; display:flex; align-items:center; }
+.dayrow .strip { display:flex; gap:1px; height:14px; border-radius:4px; overflow:hidden; background:var(--line-soft); }
+.dayrow .strip i { flex:1 1 0; min-width:1px; background:var(--neutral-bg); }
+.dayrow .strip i.bad { background:var(--bad); } .dayrow .strip i.good { background:var(--good); }
+.dayrow .strip i.eq { background:var(--ink-3); } .dayrow .strip i.none { background:transparent; }
+.dayrow .sum { grid-column:2; font-size:13px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:4px 14px; }
+.dayrow .sum b { font-weight:700; color:var(--ink); }
+.dayrow .sum .bad b { color:var(--bad); } .dayrow .sum .good b { color:var(--good); }
+@media (max-width:640px) { .dayrow { grid-template-columns:1fr; } .dayrow .sum { grid-column:1; } }
+
+.foot { margin-top:26px; font-size:12.5px; color:var(--ink-3); line-height:1.6; }
+@media (prefers-reduced-motion: no-preference) { .seg button, .chip { transition:background .15s, color .15s; } }
 </style>
+</head>
+<body>
 <div class="wrap">
-<h1>Preisradar</h1>
-<div class="sub">Eigener Preis vs. Marktplätze · Stand: 03.09.2026 11:31 · Delta negativ (rot) = Marktplatz ist günstiger
-· Export: <a href="history.csv">CSV</a> · <a href="history_excel.csv">Excel-CSV</a></div>
-<div class="scroll"><table>
-<tr><th class="name">Produkt</th><th>Eigener Preis</th><th>otto</th><th>zalando</th></tr>
-<tr><td class="name"><strong>adidas Stan Smith white/core black</strong><br><span class="muted">DEMO-001</span></td><td>89,90 €</td><td class="muted">–</td><td>95,95 €<br><span class="delta-good">+6.7 %</span></td></tr><tr><td class="name"><strong>adidas Stan Smith white/green</strong><br><span class="muted">DEMO-002</span></td><td>115,00 €</td><td class="muted">–</td><td>77,00 €<br><span class="delta-bad">-33.0 %</span></td></tr><tr><td class="name"><strong>adidas Stan Smith white/crystal sky</strong><br><span class="muted">DEMO-003</span></td><td>105,00 €</td><td class="muted">–</td><td>98,95 €<br><span class="delta-bad">-5.8 %</span></td></tr><tr><td class="name"><strong>Schiesser 95/5 Organic Cotton Shorts 3er-Pack Webgummibund dunkelblau (173983-803)</strong><br><span class="muted">SCH-173983-803</span></td><td>39,95 €</td><td>29,99 €<br><span class="delta-bad">-24.9 %</span></td><td class="muted">–</td></tr>
-</table></div>
-<div class="section"><h2>Preisverlauf</h2><div class="card"><h2>adidas Stan Smith white/core black <span class="muted">· zalando · 2026-09-01 – 2026-09-03</span></h2><svg class="spark" width="560" height="120" viewBox="0 0 560 120"><line x1="8" y1="112.0" x2="552" y2="112.0" stroke="#6b7280" stroke-dasharray="4 4" stroke-width="1"/><polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="8.0,8.0 280.0,8.0 552.0,8.0"/></svg><div class="muted">gestrichelt = eigener Preis (89,90 €)</div></div><div class="card"><h2>adidas Stan Smith white/green <span class="muted">· zalando · 2026-09-01 – 2026-09-03</span></h2><svg class="spark" width="560" height="120" viewBox="0 0 560 120"><line x1="8" y1="8.0" x2="552" y2="8.0" stroke="#6b7280" stroke-dasharray="4 4" stroke-width="1"/><polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="8.0,112.0 280.0,112.0 552.0,112.0"/></svg><div class="muted">gestrichelt = eigener Preis (115,00 €)</div></div><div class="card"><h2>adidas Stan Smith white/crystal sky <span class="muted">· zalando · 2026-09-01 – 2026-09-03</span></h2><svg class="spark" width="560" height="120" viewBox="0 0 560 120"><line x1="8" y1="54.8" x2="552" y2="54.8" stroke="#6b7280" stroke-dasharray="4 4" stroke-width="1"/><polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="8.0,8.0 280.0,8.0 552.0,112.0"/></svg><div class="muted">gestrichelt = eigener Preis (105,00 €)</div></div><div class="card"><h2>Schiesser 95/5 Organic Cotton Shorts 3er-Pack Webgummibund dunkelblau (173983-803) <span class="muted">· otto · 2026-09-01 – 2026-09-03</span></h2><svg class="spark" width="560" height="120" viewBox="0 0 560 120"><line x1="8" y1="8.0" x2="552" y2="8.0" stroke="#6b7280" stroke-dasharray="4 4" stroke-width="1"/><polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="8.0,112.0 280.0,112.0 552.0,112.0"/></svg><div class="muted">gestrichelt = eigener Preis (39,95 €)</div></div></div>
+<header class="head">
+  <div class="brand"><h1>Preisradar</h1><div class="tag"><b>4</b> Produkte auf <b>3</b> Marktplätzen · <b>3</b> aktuell unterboten</div></div>
+  <div class="meta">Daten seit 01.09.2026 · Stand 03.09.2026 22:15<br>
+    Export: <a href="history.csv">CSV</a> · <a href="history_excel.csv">Excel-CSV</a></div>
+</header>
+
+<div class="filters" role="group" aria-label="Zeitraum">
+  <span class="lbl">Zeitraum</span>
+  <div class="seg" id="range"></div>
+  <span class="hint" id="range-hint"></span>
 </div>
+
+<div class="card overview"><table>
+<thead><tr><th class="name">Produkt</th><th>Eigener Preis</th><th><span class="dot" style="background:var(--s0)"></span>Galeria</th><th><span class="dot" style="background:var(--s1)"></span>Otto</th><th><span class="dot" style="background:var(--s2)"></span>Zalando</th></tr></thead>
+<tbody><tr><td class="name"><span class="n">adidas Stan Smith white/core black</span><span class="s">DEMO-001</span></td><td data-h="Eigener Preis"><span class="price own-price">89,90 €</span></td><td class="na" data-h="Galeria"><span class="since">–</span></td><td class="na" data-h="Otto"><span class="since">–</span></td><td data-h="Zalando"><span class="price">95,95 €</span><br><span class="chip good">+6,7 %</span><span class="since">Stand 03.09.2026</span></td></tr><tr><td class="name"><span class="n">adidas Stan Smith white/green</span><span class="s">DEMO-002</span></td><td data-h="Eigener Preis"><span class="price own-price">115,00 €</span></td><td class="na" data-h="Galeria"><span class="since">–</span></td><td class="na" data-h="Otto"><span class="since">–</span></td><td data-h="Zalando"><span class="price">77,00 €</span><br><span class="chip bad">-33,0 %</span><span class="since">Stand 03.09.2026</span></td></tr><tr><td class="name"><span class="n">adidas Stan Smith white/crystal sky</span><span class="s">DEMO-003</span></td><td data-h="Eigener Preis"><span class="price own-price">105,00 €</span></td><td class="na" data-h="Galeria"><span class="since">–</span></td><td class="na" data-h="Otto"><span class="since">–</span></td><td data-h="Zalando"><span class="price">98,95 €</span><br><span class="chip bad">-5,8 %</span><span class="since">Stand 03.09.2026</span></td></tr><tr><td class="name"><span class="n">Schiesser 95/5 Organic Cotton Shorts 3er-Pack Webgummibund dunkelblau (173983-803)</span><span class="s">SCH-173983-803</span></td><td data-h="Eigener Preis"><span class="price own-price">39,95 €</span></td><td class="na" data-h="Galeria"><span class="since">–</span></td><td data-h="Otto"><span class="price">29,99 €</span><br><span class="chip bad">-24,9 %</span><span class="since">Stand 03.09.2026</span></td><td class="na" data-h="Zalando"><span class="since">–</span></td></tr></tbody>
+</table></div>
+
+<section class="card product" aria-labelledby="p0"><div class="product-head"><h2 id="p0">adidas Stan Smith white/core black</h2><span class="sku">DEMO-001</span></div><div class="legend" id="legend-0"></div><div class="chart-wrap" id="chart-0"></div><div class="days" id="days-0"></div></section><section class="card product" aria-labelledby="p1"><div class="product-head"><h2 id="p1">adidas Stan Smith white/green</h2><span class="sku">DEMO-002</span></div><div class="legend" id="legend-1"></div><div class="chart-wrap" id="chart-1"></div><div class="days" id="days-1"></div></section><section class="card product" aria-labelledby="p2"><div class="product-head"><h2 id="p2">adidas Stan Smith white/crystal sky</h2><span class="sku">DEMO-003</span></div><div class="legend" id="legend-2"></div><div class="chart-wrap" id="chart-2"></div><div class="days" id="days-2"></div></section><section class="card product" aria-labelledby="p3"><div class="product-head"><h2 id="p3">Schiesser 95/5 Organic Cotton Shorts 3er-Pack Webgummibund dunkelblau (173983-803)</h2><span class="sku">SCH-173983-803</span></div><div class="legend" id="legend-3"></div><div class="chart-wrap" id="chart-3"></div><div class="days" id="days-3"></div></section>
+
+<p class="foot">Rot = Marktplatz ist günstiger als der eigene Preis, grün = teurer. Der Tagesbalken zeigt jeden Tag des
+gewählten Zeitraums; hellgrau = kein Preis erfasst. Preise sind der niedrigste je Tag erfasste Wert.</p>
+</div>
+<script>window.__PRICE_DATA__ = {"generated": "03.09.2026 22:15", "firstDate": "2026-09-01", "lastDate": "2026-09-03", "marketplaces": [{"key": "galeria", "label": "Galeria", "slot": 0}, {"key": "otto", "label": "Otto", "slot": 1}, {"key": "zalando", "label": "Zalando", "slot": 2}], "products": [{"sku": "DEMO-001", "name": "adidas Stan Smith white/core black", "own": 89.9, "series": [{"marketplace": "zalando", "label": "Zalando", "slot": 2, "points": [["2026-09-01", 95.95], ["2026-09-02", 95.95], ["2026-09-03", 95.95]], "lastError": null, "lastRun": "2026-09-03"}]}, {"sku": "DEMO-002", "name": "adidas Stan Smith white/green", "own": 115.0, "series": [{"marketplace": "zalando", "label": "Zalando", "slot": 2, "points": [["2026-09-01", 77.0], ["2026-09-02", 77.0], ["2026-09-03", 77.0]], "lastError": null, "lastRun": "2026-09-03"}]}, {"sku": "DEMO-003", "name": "adidas Stan Smith white/crystal sky", "own": 105.0, "series": [{"marketplace": "zalando", "label": "Zalando", "slot": 2, "points": [["2026-09-01", 109.95], ["2026-09-02", 109.95], ["2026-09-03", 98.95]], "lastError": null, "lastRun": "2026-09-03"}]}, {"sku": "SCH-173983-803", "name": "Schiesser 95/5 Organic Cotton Shorts 3er-Pack Webgummibund dunkelblau (173983-803)", "own": 39.95, "series": [{"marketplace": "otto", "label": "Otto", "slot": 1, "points": [["2026-09-01", 29.99], ["2026-09-02", 29.99], ["2026-09-03", 29.99]], "lastError": null, "lastRun": "2026-09-03"}]}]};</script>
+<script>
+(function(){
+  var DATA = window.__PRICE_DATA__;
+  var RANGES = [
+    {key:'1w',  label:'1 Woche',   short:'1 W',  days:7},
+    {key:'1m',  label:'1 Monat',   short:'1 M',  days:30},
+    {key:'3m',  label:'3 Monate',  short:'3 M',  days:91},
+    {key:'6m',  label:'6 Monate',  short:'6 M',  days:182},
+    {key:'12m', label:'12 Monate', short:'12 M', days:365}
+  ];
+  var MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  var eur = new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'});
+  var fmt = function(v){ return eur.format(v); };
+  var pct = function(v){ return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + ' %'; };
+  var DAY = 86400000;
+
+  function parse(iso){ var p = iso.split('-'); return Date.UTC(+p[0], +p[1]-1, +p[2]); }
+  function dmy(t){ var d = new Date(t); return pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth()+1) + '.' + d.getUTCFullYear(); }
+  function dm(t){ var d = new Date(t); return pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth()+1) + '.'; }
+  function my(t){ var d = new Date(t); return MONTHS[d.getUTCMonth()] + ' ' + String(d.getUTCFullYear()).slice(2); }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function svgEl(tag, attrs){ var e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function keyStyle(slot){ var d = seriesDash(slot); return !d ? 'solid' : (d.indexOf('2 ') === 0 ? 'dotted' : 'dashed'); }
+  function cmp(price, own){ if (own == null) return 'eq'; var d = price - own; return d < -0.005 ? 'bad' : (d > 0.005 ? 'good' : 'eq'); }
+  function seriesColor(slot){ return 'var(--s' + slot + ')'; }
+  var DASH = ['', '7 5', '2 4', '10 4 2 4', '4 4', '12 4', '2 2', '8 3 2 3'];
+  function seriesDash(slot){ return DASH[slot % DASH.length]; }
+
+  // ---- state -------------------------------------------------------------
+  var today = (function(){ var d = new Date(); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); })();
+  var lastData = DATA.lastDate ? parse(DATA.lastDate) : today;
+  var endDay = Math.max(today, lastData);
+  var firstData = DATA.firstDate ? parse(DATA.firstDate) : endDay;
+  var spanDays = Math.round((endDay - firstData) / DAY) + 1;
+  var autoKey = (RANGES.filter(function(r){ return r.days >= spanDays; })[0] || RANGES[RANGES.length-1]).key;
+  var rangeKey = autoKey;
+  try { var saved = localStorage.getItem('preisradar.range'); if (saved && RANGES.some(function(r){ return r.key === saved; })) rangeKey = saved; } catch (e) {}
+  function range(){ return RANGES.filter(function(r){ return r.key === rangeKey; })[0]; }
+  function startDay(){ return endDay - (range().days - 1) * DAY; }
+
+  // ---- filter row --------------------------------------------------------
+  var seg = document.getElementById('range');
+  RANGES.forEach(function(r){
+    var b = el('button'); b.type = 'button'; b.dataset.key = r.key; b.setAttribute('aria-label', r.label);
+    b.appendChild(el('span', 'long', r.label)); b.appendChild(el('span', 'short', r.short));
+    b.addEventListener('click', function(){ rangeKey = r.key; try { localStorage.setItem('preisradar.range', r.key); } catch (e) {} renderAll(); });
+    seg.appendChild(b);
+  });
+  function syncFilter(){
+    var s = startDay();
+    seg.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-pressed', b.dataset.key === rangeKey ? 'true' : 'false'); });
+    document.getElementById('range-hint').textContent = dmy(s) + ' – ' + dmy(endDay);
+  }
+
+  // ---- charts ------------------------------------------------------------
+  function ticksFor(start, end, width){
+    var days = Math.round((end - start) / DAY) + 1;
+    var target = Math.max(3, Math.floor(width / 96));
+    var step = days / target;
+    var out = [];
+    step = [1, 2, 3, 5, 7, 14, 21].filter(function(c){ return c >= step; })[0] || 0;
+    if (step) {
+      var t = end;
+      while (t >= start) { out.unshift({t:t, label: dm(t)}); t -= step * DAY; }
+    } else {
+      var d = new Date(end); var y = d.getUTCFullYear(), m = d.getUTCMonth();
+      var monthStep = days > 200 ? 2 : 1;
+      for (var i = 0; i < 24; i++) { var t2 = Date.UTC(y, m - i * monthStep, 1); if (t2 < start) break; out.unshift({t:t2, label: my(t2)}); }
+    }
+    return out;
+  }
+  function niceStep(span, count){
+    var raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+    var s = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+    return s * mag;
+  }
+
+  function drawChart(p, wrap){
+    wrap.innerHTML = '';
+    var start = startDay(), end = endDay;
+    var series = p.series.map(function(s){
+      return {s:s, pts: s.points.map(function(q){ return {t: parse(q[0]), v: q[1]}; }).filter(function(q){ return q.t >= start && q.t <= end; })};
+    });
+    var visible = series.filter(function(ser){ return ser.pts.length; });
+    if (!visible.length) { wrap.appendChild(el('div', 'empty', 'Keine Preisdaten im gewählten Zeitraum.')); return; }
+
+    var W = Math.max(280, wrap.clientWidth), narrow = W < 520;
+    var H = narrow ? 230 : 300;
+    var padL = 8, padR = 10, padT = 24, padB = 30;
+    var pw = W - padL - padR, ph = H - padT - padB;
+    var vals = [];
+    visible.forEach(function(ser){ ser.pts.forEach(function(q){ vals.push(q.v); }); });
+    if (p.own != null) vals.push(p.own);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi - lo < 1) { lo -= 2; hi += 2; }
+    var padV = (hi - lo) * 0.18; lo -= padV; hi += padV;
+    var yStep = niceStep(hi - lo, narrow ? 3 : 4);
+    lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
+    var sx = function(t){ return padL + (t - start) / (end - start || DAY) * pw; };
+    var sy = function(v){ return padT + (hi - v) / (hi - lo) * ph; };
+
+    var svg = svgEl('svg', {class:'chart', viewBox:'0 0 ' + W + ' ' + H, width:W, height:H, role:'img'});
+    svg.setAttribute('aria-label', 'Preisverlauf ' + p.name + ' – Pfeiltasten zeigen Tageswerte');
+    svg.setAttribute('tabindex', '0');
+    var grid = svgEl('g', {class:'grid'}), axis = svgEl('g', {class:'axis'});
+    for (var v = lo; v <= hi + 1e-9; v += yStep) {
+      grid.appendChild(svgEl('line', {x1:padL, x2:padL + pw, y1:sy(v), y2:sy(v)}));
+      var ty = svgEl('text', {x:padL + 2, y:sy(v) - 5}); ty.textContent = fmt(v); axis.appendChild(ty);
+    }
+    ticksFor(start, end, pw).forEach(function(tk){
+      var tx = svgEl('text', {x:sx(tk.t), y:H - 8, 'text-anchor':'middle'}); tx.textContent = tk.label; axis.appendChild(tx);
+      axis.appendChild(svgEl('line', {x1:sx(tk.t), x2:sx(tk.t), y1:padT + ph, y2:padT + ph + 4}));
+    });
+    svg.appendChild(grid); svg.appendChild(axis);
+
+    // own price: the reference everything is measured against
+    var oy = null, chipW = 0;
+    if (p.own != null) {
+      oy = sy(p.own);
+      svg.appendChild(svgEl('line', {class:'own-line', x1:padL, x2:padL + pw, y1:oy, y2:oy}));
+      var chip = svgEl('g', {class:'own-chip'});
+      var txt = 'Eigener Preis ' + fmt(p.own);
+      var cw = txt.length * 6.6 + 16; chipW = cw;
+      chip.appendChild(svgEl('rect', {x:padL + pw - cw, y:oy - 11, width:cw, height:22, rx:11}));
+      var ct = svgEl('text', {x:padL + pw - cw / 2, y:oy + 4, 'text-anchor':'middle'}); ct.textContent = txt; chip.appendChild(ct);
+      svg.appendChild(chip);
+    }
+
+    // series lines + points + selective labels
+    var labels = [];
+    visible.forEach(function(ser){
+      var g = svgEl('g', {class:'series'}), col = seriesColor(ser.s.slot);
+      var d = ser.pts.map(function(q, i){ return (i ? 'L' : 'M') + sx(q.t).toFixed(1) + ' ' + sy(q.v).toFixed(1); }).join(' ');
+      if (ser.pts.length > 1) g.appendChild(svgEl('path', {d:d, stroke:col, 'stroke-dasharray': seriesDash(ser.s.slot)}));
+      ser.pts.forEach(function(q, i){
+        g.appendChild(svgEl('circle', {cx:sx(q.t), cy:sy(q.v), r:4, fill:col}));
+        var changed = i === 0 || i === ser.pts.length - 1 || Math.abs(q.v - ser.pts[i-1].v) > 0.005;
+        if (changed) labels.push({x:sx(q.t), y:sy(q.v), v:q.v, last:i === ser.pts.length - 1, own:p.own});
+      });
+      svg.appendChild(g);
+    });
+    // thin labels when they crowd: keep first/last + the biggest jumps
+    var maxLabels = Math.max(4, Math.floor(pw / 64));
+    if (labels.length > maxLabels) {
+      labels.sort(function(a, b){ return b.last - a.last; });
+      labels = labels.slice(0, maxLabels);
+    }
+    labels.sort(function(a, b){ return a.x - b.x; });
+    var lastX = -1e9, above = true;
+    labels.forEach(function(l){
+      if (l.x - lastX < 46) above = !above; else above = true;
+      if (above && l.y - padT < 18) above = false;
+      if (!above && padT + ph - l.y < 18) above = true;
+      // keep clear of the own-price chip at the right end
+      if (oy != null && l.x > padL + pw - chipW - 24 && Math.abs(l.y - oy) < 30) above = l.y < oy;
+      lastX = l.x;
+      var t = svgEl('text', {class:'plabel' + (l.last ? '' : ' dim'), x:l.x, y: above ? l.y - 10 : l.y + 19, 'text-anchor': l.x > padL + pw - 34 ? 'end' : (l.x < padL + 34 ? 'start' : 'middle')});
+      t.textContent = fmt(l.v); svg.appendChild(t);
+    });
+
+    // hover: crosshair + one read-out for every series at that day
+    var dates = {}; visible.forEach(function(ser){ ser.pts.forEach(function(q){ dates[q.t] = 1; }); });
+    var dayList = Object.keys(dates).map(Number).sort(function(a, b){ return a - b; });
+    var xhair = svgEl('line', {class:'xhair', y1:padT, y2:padT + ph, x1:-10, x2:-10, visibility:'hidden'});
+    svg.appendChild(xhair);
+    var hit = svgEl('rect', {class:'hit', x:padL, y:0, width:pw, height:H});
+    svg.appendChild(hit);
+    var tip = el('div', 'tip');
+    wrap.appendChild(svg); wrap.appendChild(tip);
+
+    var current = null;
+    function show(evt){
+      var r = svg.getBoundingClientRect();
+      var px = (evt.clientX - r.left) * (W / r.width);
+      var t = start + (px - padL) / pw * (end - start || DAY);
+      var best = dayList[0]; dayList.forEach(function(d){ if (Math.abs(d - t) < Math.abs(best - t)) best = d; });
+      showDay(best, r);
+    }
+    function showDay(best, r){
+      if (best == null) return;
+      current = best; r = r || svg.getBoundingClientRect();
+      xhair.setAttribute('x1', sx(best)); xhair.setAttribute('x2', sx(best)); xhair.setAttribute('visibility', 'visible');
+      tip.innerHTML = ''; tip.appendChild(el('div', 'd', dmy(best)));
+      visible.forEach(function(xs){
+        var q = xs.pts.filter(function(q){ return q.t === best; })[0]; if (!q) return;
+        var row = el('div', 'r'); var k = el('span', 'k'); k.style.borderColor = seriesColor(xs.s.slot); k.style.borderTopStyle = keyStyle(xs.s.slot);
+        row.appendChild(k); row.appendChild(el('span', 'v', fmt(q.v))); row.appendChild(el('span', 'n', xs.s.label));
+        if (p.own) { var c = cmp(q.v, p.own); row.appendChild(el('span', 'dl ' + c, pct((q.v - p.own) / p.own * 100))); }
+        tip.appendChild(row);
+      });
+      if (p.own != null) { var ro = el('div', 'r'); ro.appendChild(el('span', 'k own')); ro.appendChild(el('span', 'v', fmt(p.own))); ro.appendChild(el('span', 'n', 'Eigener Preis')); tip.appendChild(ro); }
+      tip.style.display = 'block';
+      var left = sx(best) / W * r.width + 14, tw = tip.offsetWidth;
+      if (left + tw > r.width - 4) left = sx(best) / W * r.width - tw - 14;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
+    }
+    function hide(){ tip.style.display = 'none'; xhair.setAttribute('visibility', 'hidden'); current = null; }
+    hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
+    hit.addEventListener('pointerleave', hide);
+    svg.addEventListener('keydown', function(e){
+      var i = current == null ? dayList.length - 1 : dayList.indexOf(current);
+      if (e.key === 'ArrowLeft') i = Math.max(0, i - 1); else if (e.key === 'ArrowRight') i = Math.min(dayList.length - 1, current == null ? i : i + 1);
+      else if (e.key === 'Home') i = 0; else if (e.key === 'End') i = dayList.length - 1; else if (e.key === 'Escape') { hide(); return; } else return;
+      e.preventDefault(); showDay(dayList[i]);
+    });
+    svg.addEventListener('blur', hide);
+  }
+
+  // ---- day counter -----------------------------------------------------
+  function drawDays(p, box){
+    box.innerHTML = '';
+    if (p.own == null || !p.series.length) return;
+    var start = startDay(), n = range().days;
+    var head = el('div', 't', 'Tage unter / über eigenem Preis (' + n + ' Tage)');
+    box.appendChild(head);
+    p.series.forEach(function(s){
+      var byDay = {}; s.points.forEach(function(q){ byDay[parse(q[0])] = q[1]; });
+      var row = el('div', 'dayrow'), who = el('div', 'who');
+      var dot = el('i', 'dot'); dot.style.background = seriesColor(s.slot); who.appendChild(dot); who.appendChild(document.createTextNode(s.label));
+      var strip = el('div', 'strip'), c = {bad:0, good:0, eq:0, none:0};
+      for (var i = 0; i < n; i++) {
+        var t = start + i * DAY, v = byDay[t], cls = v == null ? 'none' : cmp(v, p.own);
+        c[cls]++; var cell = el('i', cls); cell.title = dmy(t) + (v == null ? ': keine Daten' : ': ' + fmt(v)); strip.appendChild(cell);
+      }
+      var sum = el('div', 'sum');
+      var known = n - c.none;
+      var part = function(cls, count, word){ var e = el('span', cls); var b = el('b', null, count + (count === 1 ? ' Tag' : ' Tage')); e.appendChild(b); e.appendChild(document.createTextNode(' ' + word)); return e; };
+      sum.appendChild(part('bad', c.bad, 'günstiger als du'));
+      sum.appendChild(part('good', c.good, 'teurer'));
+      if (c.eq) sum.appendChild(part('eq', c.eq, 'gleich'));
+      sum.appendChild(el('span', 'eq', known + ' von ' + n + ' Tagen erfasst'));
+      row.appendChild(who); row.appendChild(strip); row.appendChild(sum); box.appendChild(row);
+    });
+  }
+
+  // ---- legend ----------------------------------------------------------
+  function drawLegend(p, box){
+    box.innerHTML = '';
+    var start = startDay();
+    p.series.forEach(function(s){
+      var it = el('span', 'it'), key = el('span', 'key'); key.style.borderColor = seriesColor(s.slot); key.style.borderTopStyle = keyStyle(s.slot); it.appendChild(key);
+      var inRange = s.points.filter(function(q){ return parse(q[0]) >= start; });
+      var last = inRange.length ? inRange[inRange.length - 1] : (s.points.length ? s.points[s.points.length - 1] : null);
+      if (last) { it.appendChild(el('span', 'v', fmt(last[1]))); it.appendChild(el('span', 'name', s.label + ' · ' + dmy(parse(last[0])))); }
+      else it.appendChild(el('span', 'name', s.label + ' · noch keine Daten'));
+      if (s.lastError) it.appendChild(el('span', 'warn', ' · letzter Abruf fehlgeschlagen' + (s.lastRun ? ' (' + dmy(parse(s.lastRun)) + ')' : '')));
+      box.appendChild(it);
+    });
+    if (p.own != null) { var o = el('span', 'it'); o.appendChild(el('span', 'key own')); o.appendChild(el('span', 'v', fmt(p.own))); o.appendChild(el('span', 'name', 'Eigener Preis')); box.appendChild(o); }
+  }
+
+  function renderAll(){
+    syncFilter();
+    DATA.products.forEach(function(p, i){
+      drawLegend(p, document.getElementById('legend-' + i));
+      drawChart(p, document.getElementById('chart-' + i));
+      drawDays(p, document.getElementById('days-' + i));
+    });
+  }
+  renderAll();
+  var pending;
+  window.addEventListener('resize', function(){ clearTimeout(pending); pending = setTimeout(renderAll, 120); });
+})();
+</script>
+</body>
+</html>

@@ -72,10 +72,32 @@ python3 src/scrape.py && python3 src/dashboard.py
 Live dashboard (GitHub Pages, republished by every daily run):
 **https://dynamicdolphino.github.io/price-radar/**
 
+`src/dashboard.py` writes a single self-contained `dashboard.html` (inline CSS +
+vanilla JS, no external assets, light and dark mode):
+
+- **Overview table** — own price vs. the latest price per marketplace with the
+  delta in % (red = marketplace is cheaper) and the snapshot date. On phones each
+  row becomes a card.
+- **One chart per product** — every marketplace as its own line (fixed colour and
+  dash pattern per marketplace), the own price as a solid reference line with a
+  label chip, price labels on first/last/changed points, hover or touch for a
+  read-out of all series on a day, arrow keys when the chart is focused.
+- **Time range** — presets 1 week / 1 month / 3 / 6 / 12 months in one row above
+  the charts; the default is the smallest preset that covers all data and the
+  choice is remembered in the browser.
+- **Day counter** — per marketplace a strip with one cell per day of the selected
+  range and the counts "n Tage günstiger als du · n Tage teurer · n von N Tagen
+  erfasst".
+- German formats throughout (`dd.mm.yyyy`, `1.234,56 €`). UI language is German
+  because that is the audience; code and docs stay English.
+
+Local preview: `python3 src/dashboard.py && python3 -m http.server 8765` and open
+`http://localhost:8765/dashboard.html`.
+
 Price history export (linked from the dashboard header):
-- `history.csv` — standard CSV (comma separator, dot decimals)
+- `history.csv` — standard CSV (comma separator, dot decimals, ISO dates)
 - `history_excel.csv` — opens cleanly in German Excel (semicolon separator,
-  comma decimals, UTF-8 BOM)
+  comma decimals, `dd.mm.yyyy` dates, UTF-8 BOM)
 
 Regenerate locally with `python3 src/export.py`.
 
@@ -131,3 +153,10 @@ locally instead of spending credits on repeated live fetches.
 `python3 src/scrape.py --ingest pages.json` feeds pre-fetched pages
 (`[{"url":..., "metadata":..., "html":...}]`) through the same parse/store path
 without spending credits.
+
+## Status & open items
+
+Open topics with priorities: [`BACKLOG.md`](BACKLOG.md). Chronological decision log
+(the *why*): [`docs/00-development-log.md`](docs/00-development-log.md).
+
+*Working language: chat and UI are German, everything in the repository is English.*

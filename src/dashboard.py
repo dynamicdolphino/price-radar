@@ -1,10 +1,16 @@
 """Generate a self-contained dashboard.html from the SQLite snapshots.
-Pure Python + inline SVG, no external assets, no LLM.
+
+Pure Python on the data side; the page carries a small inline JavaScript renderer
+(no external assets, no LLM) that draws one SVG price chart per product with every
+marketplace as its own series, the own price as the reference line, a time-range
+filter (1 week … 12 months), hover read-outs and a day counter (how many days each
+marketplace was cheaper / more expensive than the own price).
 
 Usage: python3 src/dashboard.py   -> writes dashboard.html in project root
 """
 import datetime
 import html
+import json
 import sys
 from pathlib import Path
 
@@ -13,140 +19,606 @@ import db
 
 OUT = db.ROOT / "dashboard.html"
 
-CSS = """
-:root { --bg:#f6f7f9; --card:#fff; --ink:#1a1d21; --muted:#6b7280; --line:#e5e7eb;
-        --good:#0a7d33; --bad:#c22424; --accent:#1d4ed8; }
+# Categorical series slots (validated with the dataviz palette checker, light + dark).
+# Slot order is assigned to marketplaces alphabetically and never re-shuffled, so a
+# marketplace keeps its colour no matter which products it appears on.
+SERIES = [
+    ("#2a78d6", "#3987e5"),
+    ("#eb6834", "#d95926"),
+    ("#1baf7a", "#199e70"),
+    ("#eda100", "#c98500"),
+    ("#e87ba4", "#d55181"),
+    ("#008300", "#008300"),
+    ("#4a3aa7", "#9085e9"),
+    ("#e34948", "#e66767"),
+]
+
+LABELS = {"zalando": "Zalando", "otto": "Otto", "amazon": "Amazon",
+          "galeria": "Galeria", "aboutyou": "About You", "kaufland": "Kaufland",
+          "ebay": "eBay", "idealo": "idealo"}
+
+
+def label(marketplace):
+    return LABELS.get(marketplace.lower(), marketplace.capitalize())
+
+
+def de_date(iso):
+    """'2026-09-03' -> '03.09.2026'"""
+    y, m, d = iso[:10].split("-")
+    return f"{d}.{m}.{y}"
+
+
+def collect():
+    conn = db.connect()
+    marketplaces = [r["marketplace"] for r in conn.execute(
+        "SELECT DISTINCT marketplace FROM matches WHERE active=1 ORDER BY marketplace")]
+    slot = {mp: i % len(SERIES) for i, mp in enumerate(marketplaces)}
+
+    history = {}
+    for r in conn.execute("""
+        SELECT m.sku, m.marketplace, date(s.scraped_at) AS d, MIN(s.price) AS price
+        FROM snapshots s JOIN matches m ON m.id = s.match_id
+        WHERE s.price IS NOT NULL AND m.active = 1
+        GROUP BY m.sku, m.marketplace, d ORDER BY d"""):
+        history.setdefault((r["sku"], r["marketplace"]), []).append([r["d"], r["price"]])
+
+    # Most recent snapshot per match, successful or not — surfaces a broken extraction.
+    last_run = {}
+    for r in conn.execute("""
+        SELECT m.sku, m.marketplace, s.price, s.error, s.scraped_at FROM snapshots s
+        JOIN matches m ON m.id = s.match_id
+        WHERE s.id IN (SELECT MAX(id) FROM snapshots GROUP BY match_id)"""):
+        last_run[(r["sku"], r["marketplace"])] = r
+
+    products = []
+    for p in conn.execute("SELECT * FROM products ORDER BY sku"):
+        series = []
+        for mp in marketplaces:
+            points = history.get((p["sku"], mp))
+            run = last_run.get((p["sku"], mp))
+            if not points and not run:
+                continue
+            series.append({
+                "marketplace": mp,
+                "label": label(mp),
+                "slot": slot[mp],
+                "points": points or [],
+                "lastError": (run["error"] if run and run["price"] is None else None),
+                "lastRun": run["scraped_at"][:10] if run else None,
+            })
+        products.append({"sku": p["sku"], "name": p["name"],
+                         "own": p["own_price"], "series": series})
+
+    all_dates = [pt[0] for s in history.values() for pt in s]
+    return {
+        "generated": datetime.datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "firstDate": min(all_dates) if all_dates else None,
+        "lastDate": max(all_dates) if all_dates else None,
+        "marketplaces": [{"key": mp, "label": label(mp), "slot": slot[mp]} for mp in marketplaces],
+        "products": products,
+    }
+
+
+CSS = r"""
+:root {
+  color-scheme: light;
+  --bg:#eef1f5; --card:#ffffff; --card-2:#f6f8fb; --line:#dfe4ea; --line-soft:#edf0f4;
+  --ink:#0f172a; --ink-2:#475569; --ink-3:#66748a;
+  --own:#0f172a; --own-chip:#0f172a; --own-chip-ink:#ffffff;
+  --good:#0ca30c; --good-bg:#e4f5e4; --bad:#d03b3b; --bad-bg:#fbe7e7;
+  --neutral-bg:#e6eaef; --focus:#2a78d6;
+  --s0:#2a78d6; --s1:#eb6834; --s2:#1baf7a; --s3:#eda100;
+  --s4:#e87ba4; --s5:#008300; --s6:#4a3aa7; --s7:#e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:#0f1216; --card:#1a1e24; --card-2:#22272e; --line:#333a44; --line-soft:#272d35;
+    --ink:#f3f5f7; --ink-2:#b9c2ce; --ink-3:#7f8b99;
+    --own:#f3f5f7; --own-chip:#f3f5f7; --own-chip-ink:#0f1216;
+    --good:#3fbf3f; --good-bg:#173a17; --bad:#ef6b6b; --bad-bg:#4a1f1f;
+    --neutral-bg:#2b323b; --focus:#3987e5;
+    --s0:#3987e5; --s1:#d95926; --s2:#199e70; --s3:#c98500;
+    --s4:#d55181; --s5:#008300; --s6:#9085e9; --s7:#e66767;
+  }
+}
 * { box-sizing:border-box; }
-body { margin:0; padding:32px 24px; background:var(--bg); color:var(--ink);
-       font:15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
-.wrap { max-width:1100px; margin:0 auto; }
-h1 { font-size:22px; margin:0 0 4px; }
-.sub { color:var(--muted); margin-bottom:24px; font-size:13px; }
-table { width:100%; border-collapse:collapse; background:var(--card);
-        border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-th, td { padding:10px 14px; text-align:right; border-bottom:1px solid var(--line);
-         white-space:nowrap; }
-th { background:#fafafa; font-size:12px; text-transform:uppercase;
-     letter-spacing:.04em; color:var(--muted); }
-td.name, th.name { text-align:left; white-space:normal; }
-.delta-bad { color:var(--bad); font-weight:600; }
-.delta-good { color:var(--good); }
-.muted { color:var(--muted); }
-.spark { vertical-align:middle; }
-.scroll { overflow-x:auto; }
-.section { margin-top:32px; }
-h2 { font-size:16px; margin:0 0 12px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:10px;
-        padding:16px; margin-bottom:16px; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums; }
+a { color:inherit; }
+.wrap { max-width:1120px; margin:0 auto; padding:28px 20px 64px; }
+@media (max-width:640px) { .wrap { padding:18px 12px 48px; } }
+
+/* header */
+.head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px 24px; margin-bottom:22px; }
+.brand h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-0.03em; line-height:1.1; }
+.brand .tag { margin-top:6px; color:var(--ink-2); font-size:14px; }
+.brand .tag b { color:var(--ink); font-weight:600; }
+.meta { font-size:13px; color:var(--ink-3); text-align:right; }
+.meta a { color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--line); }
+.meta a:hover { color:var(--ink); border-color:var(--ink); }
+@media (max-width:640px) { .meta { text-align:left; } .brand h1 { font-size:26px; } }
+
+/* filter row */
+.filters { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 18px; }
+.filters .lbl { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; }
+.seg { display:inline-flex; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px; gap:2px; }
+.seg button { appearance:none; border:0; background:transparent; color:var(--ink-2); font:inherit; font-size:13px; font-weight:600;
+  padding:6px 13px; border-radius:999px; cursor:pointer; min-height:34px; }
+.seg button:hover { color:var(--ink); background:var(--card-2); }
+.seg button[aria-pressed="true"] { background:var(--ink); color:var(--card); }
+.seg button:focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+.filters .hint { font-size:13px; color:var(--ink-3); }
+.seg .short { display:none; }
+@media (max-width:640px) { .seg { width:100%; } .seg button { flex:1; padding:6px 4px; font-size:12.5px; min-height:42px; } .seg .long { display:none; } .seg .short { display:inline; } }
+
+/* overview table */
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; }
+.overview { padding:0; overflow:hidden; margin-bottom:26px; }
+table { width:100%; border-collapse:collapse; }
+th, td { padding:12px 16px; text-align:right; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+tr:last-child td { border-bottom:0; }
+th { font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; background:var(--card-2); }
+th.name, td.name { text-align:left; }
+td.name .n { font-weight:600; }
+td.name .s { display:block; font-size:12px; color:var(--ink-3); }
+.price { font-size:17px; font-weight:700; letter-spacing:-0.01em; }
+.own-price { font-weight:800; }
+.chip { display:inline-block; font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; margin-top:4px; white-space:nowrap; }
+.chip.bad { color:var(--bad); background:var(--bad-bg); }
+.chip.good { color:var(--good); background:var(--good-bg); }
+.chip.eq { color:var(--ink-2); background:var(--neutral-bg); }
+.since { display:block; font-size:12px; color:var(--ink-3); margin-top:2px; }
+.warn { display:inline-block; font-size:12px; color:var(--bad); }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:-1px; margin-right:6px; }
+@media (max-width:720px) {
+  .overview { background:transparent; border:0; }
+  table, tbody { display:block; }
+  thead { display:none; }
+  tr { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; background:var(--card); border:1px solid var(--line);
+       border-radius:14px; padding:6px 14px; margin-bottom:10px; }
+  td { display:block; border:0; padding:8px 0; text-align:left; }
+  td.name { grid-column:1 / -1; border-bottom:1px solid var(--line-soft); }
+  td.na { display:none; }
+  td[data-h]::before { content:attr(data-h); display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; margin-bottom:2px; }
+}
+
+/* product cards */
+.product { padding:18px 20px 16px; margin-bottom:18px; }
+@media (max-width:640px) { .product { padding:14px 12px 12px; border-radius:12px; } }
+.product-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:6px 16px; margin-bottom:12px; }
+.product-head h2 { margin:0; font-size:17px; font-weight:700; letter-spacing:-0.01em; }
+.product-head .sku { font-size:12px; color:var(--ink-3); }
+.legend { display:flex; flex-wrap:wrap; gap:8px 18px; margin:0 0 10px; font-size:13.5px; }
+.legend .it { display:inline-flex; align-items:center; gap:7px; }
+.legend .key { width:18px; height:0; border-top:3px solid; border-radius:2px; }
+.legend .key.own { border-top-style:solid; border-color:var(--own); }
+.legend .v { font-weight:700; }
+.legend .name { color:var(--ink-2); }
+.chart-wrap { position:relative; }
+.chart { display:block; width:100%; height:auto; overflow:visible; touch-action:pan-y; }
+.chart text { font-family:inherit; }
+.grid line { stroke:var(--line-soft); stroke-width:1; }
+.axis text { fill:var(--ink-3); font-size:11.5px; }
+.axis line { stroke:var(--line); }
+.series path { fill:none; stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round; }
+.series circle { stroke:var(--card); stroke-width:2; }
+.own-line { stroke:var(--own); stroke-width:2; }
+.own-chip rect { fill:var(--own-chip); }
+.own-chip text { fill:var(--own-chip-ink); font-size:11.5px; font-weight:700; }
+.plabel { font-size:11.5px; font-weight:700; fill:var(--ink); paint-order:stroke; stroke:var(--card); stroke-width:4px; stroke-linejoin:round; }
+.plabel.dim { fill:var(--ink-2); font-weight:600; }
+.xhair { stroke:var(--ink-3); stroke-width:1; stroke-dasharray:3 3; pointer-events:none; }
+.hit { fill:transparent; outline:none; }
+.chart:focus-visible { outline:2px solid var(--focus); outline-offset:2px; border-radius:6px; }
+.tip { position:absolute; z-index:5; pointer-events:none; background:var(--card); color:var(--ink); border:1px solid var(--line);
+  border-radius:10px; padding:8px 11px; font-size:13px; box-shadow:0 8px 24px rgba(15,23,42,.12); min-width:150px; display:none; }
+.tip .d { font-size:11.5px; color:var(--ink-3); margin-bottom:5px; font-weight:600; letter-spacing:.02em; }
+.tip .r { display:flex; align-items:center; gap:8px; white-space:nowrap; line-height:1.7; }
+.tip .k { width:14px; border-top:3px solid; border-radius:2px; }
+.tip .k.own { border-color:var(--own); }
+.tip .v { font-weight:700; }
+.tip .n { color:var(--ink-2); }
+.tip .dl { margin-left:auto; font-size:12px; font-weight:700; padding-left:8px; }
+.tip .dl.bad { color:var(--bad); } .tip .dl.good { color:var(--good); } .tip .dl.eq { color:var(--ink-3); }
+.empty { padding:26px 0; color:var(--ink-3); text-align:center; font-size:14px; }
+
+/* day counter */
+.days { margin-top:14px; border-top:1px solid var(--line-soft); padding-top:12px; }
+.days .t { font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); font-weight:600; margin-bottom:8px; }
+.dayrow { display:grid; grid-template-columns:minmax(72px, 130px) 1fr; gap:6px 14px; align-items:center; margin-bottom:8px; }
+.dayrow .who { font-size:13px; font-weight:600; display:flex; align-items:center; }
+.dayrow .strip { display:flex; gap:1px; height:14px; border-radius:4px; overflow:hidden; background:var(--line-soft); }
+.dayrow .strip i { flex:1 1 0; min-width:1px; background:var(--neutral-bg); }
+.dayrow .strip i.bad { background:var(--bad); } .dayrow .strip i.good { background:var(--good); }
+.dayrow .strip i.eq { background:var(--ink-3); } .dayrow .strip i.none { background:transparent; }
+.dayrow .sum { grid-column:2; font-size:13px; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:4px 14px; }
+.dayrow .sum b { font-weight:700; color:var(--ink); }
+.dayrow .sum .bad b { color:var(--bad); } .dayrow .sum .good b { color:var(--good); }
+@media (max-width:640px) { .dayrow { grid-template-columns:1fr; } .dayrow .sum { grid-column:1; } }
+
+.foot { margin-top:26px; font-size:12.5px; color:var(--ink-3); line-height:1.6; }
+@media (prefers-reduced-motion: no-preference) { .seg button, .chip { transition:background .15s, color .15s; } }
 """
+
+JS = r"""
+(function(){
+  var DATA = window.__PRICE_DATA__;
+  var RANGES = [
+    {key:'1w',  label:'1 Woche',   short:'1 W',  days:7},
+    {key:'1m',  label:'1 Monat',   short:'1 M',  days:30},
+    {key:'3m',  label:'3 Monate',  short:'3 M',  days:91},
+    {key:'6m',  label:'6 Monate',  short:'6 M',  days:182},
+    {key:'12m', label:'12 Monate', short:'12 M', days:365}
+  ];
+  var MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  var eur = new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'});
+  var fmt = function(v){ return eur.format(v); };
+  var pct = function(v){ return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + ' %'; };
+  var DAY = 86400000;
+
+  function parse(iso){ var p = iso.split('-'); return Date.UTC(+p[0], +p[1]-1, +p[2]); }
+  function dmy(t){ var d = new Date(t); return pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth()+1) + '.' + d.getUTCFullYear(); }
+  function dm(t){ var d = new Date(t); return pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth()+1) + '.'; }
+  function my(t){ var d = new Date(t); return MONTHS[d.getUTCMonth()] + ' ' + String(d.getUTCFullYear()).slice(2); }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function svgEl(tag, attrs){ var e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function keyStyle(slot){ var d = seriesDash(slot); return !d ? 'solid' : (d.indexOf('2 ') === 0 ? 'dotted' : 'dashed'); }
+  function cmp(price, own){ if (own == null) return 'eq'; var d = price - own; return d < -0.005 ? 'bad' : (d > 0.005 ? 'good' : 'eq'); }
+  function seriesColor(slot){ return 'var(--s' + slot + ')'; }
+  var DASH = ['', '7 5', '2 4', '10 4 2 4', '4 4', '12 4', '2 2', '8 3 2 3'];
+  function seriesDash(slot){ return DASH[slot % DASH.length]; }
+
+  // ---- state -------------------------------------------------------------
+  var today = (function(){ var d = new Date(); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); })();
+  var lastData = DATA.lastDate ? parse(DATA.lastDate) : today;
+  var endDay = Math.max(today, lastData);
+  var firstData = DATA.firstDate ? parse(DATA.firstDate) : endDay;
+  var spanDays = Math.round((endDay - firstData) / DAY) + 1;
+  var autoKey = (RANGES.filter(function(r){ return r.days >= spanDays; })[0] || RANGES[RANGES.length-1]).key;
+  var rangeKey = autoKey;
+  try { var saved = localStorage.getItem('preisradar.range'); if (saved && RANGES.some(function(r){ return r.key === saved; })) rangeKey = saved; } catch (e) {}
+  function range(){ return RANGES.filter(function(r){ return r.key === rangeKey; })[0]; }
+  function startDay(){ return endDay - (range().days - 1) * DAY; }
+
+  // ---- filter row --------------------------------------------------------
+  var seg = document.getElementById('range');
+  RANGES.forEach(function(r){
+    var b = el('button'); b.type = 'button'; b.dataset.key = r.key; b.setAttribute('aria-label', r.label);
+    b.appendChild(el('span', 'long', r.label)); b.appendChild(el('span', 'short', r.short));
+    b.addEventListener('click', function(){ rangeKey = r.key; try { localStorage.setItem('preisradar.range', r.key); } catch (e) {} renderAll(); });
+    seg.appendChild(b);
+  });
+  function syncFilter(){
+    var s = startDay();
+    seg.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-pressed', b.dataset.key === rangeKey ? 'true' : 'false'); });
+    document.getElementById('range-hint').textContent = dmy(s) + ' – ' + dmy(endDay);
+  }
+
+  // ---- charts ------------------------------------------------------------
+  function ticksFor(start, end, width){
+    var days = Math.round((end - start) / DAY) + 1;
+    var target = Math.max(3, Math.floor(width / 96));
+    var step = days / target;
+    var out = [];
+    step = [1, 2, 3, 5, 7, 14, 21].filter(function(c){ return c >= step; })[0] || 0;
+    if (step) {
+      var t = end;
+      while (t >= start) { out.unshift({t:t, label: dm(t)}); t -= step * DAY; }
+    } else {
+      var d = new Date(end); var y = d.getUTCFullYear(), m = d.getUTCMonth();
+      var monthStep = days > 200 ? 2 : 1;
+      for (var i = 0; i < 24; i++) { var t2 = Date.UTC(y, m - i * monthStep, 1); if (t2 < start) break; out.unshift({t:t2, label: my(t2)}); }
+    }
+    return out;
+  }
+  function niceStep(span, count){
+    var raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+    var s = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+    return s * mag;
+  }
+
+  function drawChart(p, wrap){
+    wrap.innerHTML = '';
+    var start = startDay(), end = endDay;
+    var series = p.series.map(function(s){
+      return {s:s, pts: s.points.map(function(q){ return {t: parse(q[0]), v: q[1]}; }).filter(function(q){ return q.t >= start && q.t <= end; })};
+    });
+    var visible = series.filter(function(ser){ return ser.pts.length; });
+    if (!visible.length) { wrap.appendChild(el('div', 'empty', 'Keine Preisdaten im gewählten Zeitraum.')); return; }
+
+    var W = Math.max(280, wrap.clientWidth), narrow = W < 520;
+    var H = narrow ? 230 : 300;
+    var padL = 8, padR = 10, padT = 24, padB = 30;
+    var pw = W - padL - padR, ph = H - padT - padB;
+    var vals = [];
+    visible.forEach(function(ser){ ser.pts.forEach(function(q){ vals.push(q.v); }); });
+    if (p.own != null) vals.push(p.own);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi - lo < 1) { lo -= 2; hi += 2; }
+    var padV = (hi - lo) * 0.18; lo -= padV; hi += padV;
+    var yStep = niceStep(hi - lo, narrow ? 3 : 4);
+    lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
+    var sx = function(t){ return padL + (t - start) / (end - start || DAY) * pw; };
+    var sy = function(v){ return padT + (hi - v) / (hi - lo) * ph; };
+
+    var svg = svgEl('svg', {class:'chart', viewBox:'0 0 ' + W + ' ' + H, width:W, height:H, role:'img'});
+    svg.setAttribute('aria-label', 'Preisverlauf ' + p.name + ' – Pfeiltasten zeigen Tageswerte');
+    svg.setAttribute('tabindex', '0');
+    var grid = svgEl('g', {class:'grid'}), axis = svgEl('g', {class:'axis'});
+    for (var v = lo; v <= hi + 1e-9; v += yStep) {
+      grid.appendChild(svgEl('line', {x1:padL, x2:padL + pw, y1:sy(v), y2:sy(v)}));
+      var ty = svgEl('text', {x:padL + 2, y:sy(v) - 5}); ty.textContent = fmt(v); axis.appendChild(ty);
+    }
+    ticksFor(start, end, pw).forEach(function(tk){
+      var tx = svgEl('text', {x:sx(tk.t), y:H - 8, 'text-anchor':'middle'}); tx.textContent = tk.label; axis.appendChild(tx);
+      axis.appendChild(svgEl('line', {x1:sx(tk.t), x2:sx(tk.t), y1:padT + ph, y2:padT + ph + 4}));
+    });
+    svg.appendChild(grid); svg.appendChild(axis);
+
+    // own price: the reference everything is measured against
+    var oy = null, chipW = 0;
+    if (p.own != null) {
+      oy = sy(p.own);
+      svg.appendChild(svgEl('line', {class:'own-line', x1:padL, x2:padL + pw, y1:oy, y2:oy}));
+      var chip = svgEl('g', {class:'own-chip'});
+      var txt = 'Eigener Preis ' + fmt(p.own);
+      var cw = txt.length * 6.6 + 16; chipW = cw;
+      chip.appendChild(svgEl('rect', {x:padL + pw - cw, y:oy - 11, width:cw, height:22, rx:11}));
+      var ct = svgEl('text', {x:padL + pw - cw / 2, y:oy + 4, 'text-anchor':'middle'}); ct.textContent = txt; chip.appendChild(ct);
+      svg.appendChild(chip);
+    }
+
+    // series lines + points + selective labels
+    var labels = [];
+    visible.forEach(function(ser){
+      var g = svgEl('g', {class:'series'}), col = seriesColor(ser.s.slot);
+      var d = ser.pts.map(function(q, i){ return (i ? 'L' : 'M') + sx(q.t).toFixed(1) + ' ' + sy(q.v).toFixed(1); }).join(' ');
+      if (ser.pts.length > 1) g.appendChild(svgEl('path', {d:d, stroke:col, 'stroke-dasharray': seriesDash(ser.s.slot)}));
+      ser.pts.forEach(function(q, i){
+        g.appendChild(svgEl('circle', {cx:sx(q.t), cy:sy(q.v), r:4, fill:col}));
+        var changed = i === 0 || i === ser.pts.length - 1 || Math.abs(q.v - ser.pts[i-1].v) > 0.005;
+        if (changed) labels.push({x:sx(q.t), y:sy(q.v), v:q.v, last:i === ser.pts.length - 1, own:p.own});
+      });
+      svg.appendChild(g);
+    });
+    // thin labels when they crowd: keep first/last + the biggest jumps
+    var maxLabels = Math.max(4, Math.floor(pw / 64));
+    if (labels.length > maxLabels) {
+      labels.sort(function(a, b){ return b.last - a.last; });
+      labels = labels.slice(0, maxLabels);
+    }
+    labels.sort(function(a, b){ return a.x - b.x; });
+    var lastX = -1e9, above = true;
+    labels.forEach(function(l){
+      if (l.x - lastX < 46) above = !above; else above = true;
+      if (above && l.y - padT < 18) above = false;
+      if (!above && padT + ph - l.y < 18) above = true;
+      // keep clear of the own-price chip at the right end
+      if (oy != null && l.x > padL + pw - chipW - 24 && Math.abs(l.y - oy) < 30) above = l.y < oy;
+      lastX = l.x;
+      var t = svgEl('text', {class:'plabel' + (l.last ? '' : ' dim'), x:l.x, y: above ? l.y - 10 : l.y + 19, 'text-anchor': l.x > padL + pw - 34 ? 'end' : (l.x < padL + 34 ? 'start' : 'middle')});
+      t.textContent = fmt(l.v); svg.appendChild(t);
+    });
+
+    // hover: crosshair + one read-out for every series at that day
+    var dates = {}; visible.forEach(function(ser){ ser.pts.forEach(function(q){ dates[q.t] = 1; }); });
+    var dayList = Object.keys(dates).map(Number).sort(function(a, b){ return a - b; });
+    var xhair = svgEl('line', {class:'xhair', y1:padT, y2:padT + ph, x1:-10, x2:-10, visibility:'hidden'});
+    svg.appendChild(xhair);
+    var hit = svgEl('rect', {class:'hit', x:padL, y:0, width:pw, height:H});
+    svg.appendChild(hit);
+    var tip = el('div', 'tip');
+    wrap.appendChild(svg); wrap.appendChild(tip);
+
+    var current = null;
+    function show(evt){
+      var r = svg.getBoundingClientRect();
+      var px = (evt.clientX - r.left) * (W / r.width);
+      var t = start + (px - padL) / pw * (end - start || DAY);
+      var best = dayList[0]; dayList.forEach(function(d){ if (Math.abs(d - t) < Math.abs(best - t)) best = d; });
+      showDay(best, r);
+    }
+    function showDay(best, r){
+      if (best == null) return;
+      current = best; r = r || svg.getBoundingClientRect();
+      xhair.setAttribute('x1', sx(best)); xhair.setAttribute('x2', sx(best)); xhair.setAttribute('visibility', 'visible');
+      tip.innerHTML = ''; tip.appendChild(el('div', 'd', dmy(best)));
+      visible.forEach(function(xs){
+        var q = xs.pts.filter(function(q){ return q.t === best; })[0]; if (!q) return;
+        var row = el('div', 'r'); var k = el('span', 'k'); k.style.borderColor = seriesColor(xs.s.slot); k.style.borderTopStyle = keyStyle(xs.s.slot);
+        row.appendChild(k); row.appendChild(el('span', 'v', fmt(q.v))); row.appendChild(el('span', 'n', xs.s.label));
+        if (p.own) { var c = cmp(q.v, p.own); row.appendChild(el('span', 'dl ' + c, pct((q.v - p.own) / p.own * 100))); }
+        tip.appendChild(row);
+      });
+      if (p.own != null) { var ro = el('div', 'r'); ro.appendChild(el('span', 'k own')); ro.appendChild(el('span', 'v', fmt(p.own))); ro.appendChild(el('span', 'n', 'Eigener Preis')); tip.appendChild(ro); }
+      tip.style.display = 'block';
+      var left = sx(best) / W * r.width + 14, tw = tip.offsetWidth;
+      if (left + tw > r.width - 4) left = sx(best) / W * r.width - tw - 14;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
+    }
+    function hide(){ tip.style.display = 'none'; xhair.setAttribute('visibility', 'hidden'); current = null; }
+    hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
+    hit.addEventListener('pointerleave', hide);
+    svg.addEventListener('keydown', function(e){
+      var i = current == null ? dayList.length - 1 : dayList.indexOf(current);
+      if (e.key === 'ArrowLeft') i = Math.max(0, i - 1); else if (e.key === 'ArrowRight') i = Math.min(dayList.length - 1, current == null ? i : i + 1);
+      else if (e.key === 'Home') i = 0; else if (e.key === 'End') i = dayList.length - 1; else if (e.key === 'Escape') { hide(); return; } else return;
+      e.preventDefault(); showDay(dayList[i]);
+    });
+    svg.addEventListener('blur', hide);
+  }
+
+  // ---- day counter -----------------------------------------------------
+  function drawDays(p, box){
+    box.innerHTML = '';
+    if (p.own == null || !p.series.length) return;
+    var start = startDay(), n = range().days;
+    var head = el('div', 't', 'Tage unter / über eigenem Preis (' + n + ' Tage)');
+    box.appendChild(head);
+    p.series.forEach(function(s){
+      var byDay = {}; s.points.forEach(function(q){ byDay[parse(q[0])] = q[1]; });
+      var row = el('div', 'dayrow'), who = el('div', 'who');
+      var dot = el('i', 'dot'); dot.style.background = seriesColor(s.slot); who.appendChild(dot); who.appendChild(document.createTextNode(s.label));
+      var strip = el('div', 'strip'), c = {bad:0, good:0, eq:0, none:0};
+      for (var i = 0; i < n; i++) {
+        var t = start + i * DAY, v = byDay[t], cls = v == null ? 'none' : cmp(v, p.own);
+        c[cls]++; var cell = el('i', cls); cell.title = dmy(t) + (v == null ? ': keine Daten' : ': ' + fmt(v)); strip.appendChild(cell);
+      }
+      var sum = el('div', 'sum');
+      var known = n - c.none;
+      var part = function(cls, count, word){ var e = el('span', cls); var b = el('b', null, count + (count === 1 ? ' Tag' : ' Tage')); e.appendChild(b); e.appendChild(document.createTextNode(' ' + word)); return e; };
+      sum.appendChild(part('bad', c.bad, 'günstiger als du'));
+      sum.appendChild(part('good', c.good, 'teurer'));
+      if (c.eq) sum.appendChild(part('eq', c.eq, 'gleich'));
+      sum.appendChild(el('span', 'eq', known + ' von ' + n + ' Tagen erfasst'));
+      row.appendChild(who); row.appendChild(strip); row.appendChild(sum); box.appendChild(row);
+    });
+  }
+
+  // ---- legend ----------------------------------------------------------
+  function drawLegend(p, box){
+    box.innerHTML = '';
+    var start = startDay();
+    p.series.forEach(function(s){
+      var it = el('span', 'it'), key = el('span', 'key'); key.style.borderColor = seriesColor(s.slot); key.style.borderTopStyle = keyStyle(s.slot); it.appendChild(key);
+      var inRange = s.points.filter(function(q){ return parse(q[0]) >= start; });
+      var last = inRange.length ? inRange[inRange.length - 1] : (s.points.length ? s.points[s.points.length - 1] : null);
+      if (last) { it.appendChild(el('span', 'v', fmt(last[1]))); it.appendChild(el('span', 'name', s.label + ' · ' + dmy(parse(last[0])))); }
+      else it.appendChild(el('span', 'name', s.label + ' · noch keine Daten'));
+      if (s.lastError) it.appendChild(el('span', 'warn', ' · letzter Abruf fehlgeschlagen' + (s.lastRun ? ' (' + dmy(parse(s.lastRun)) + ')' : '')));
+      box.appendChild(it);
+    });
+    if (p.own != null) { var o = el('span', 'it'); o.appendChild(el('span', 'key own')); o.appendChild(el('span', 'v', fmt(p.own))); o.appendChild(el('span', 'name', 'Eigener Preis')); box.appendChild(o); }
+  }
+
+  function renderAll(){
+    syncFilter();
+    DATA.products.forEach(function(p, i){
+      drawLegend(p, document.getElementById('legend-' + i));
+      drawChart(p, document.getElementById('chart-' + i));
+      drawDays(p, document.getElementById('days-' + i));
+    });
+  }
+  renderAll();
+  var pending;
+  window.addEventListener('resize', function(){ clearTimeout(pending); pending = setTimeout(renderAll, 120); });
+})();
+"""
+
+
+def chip(delta):
+    cls = "bad" if delta < -0.05 else ("good" if delta > 0.05 else "eq")
+    sign = "+" if delta > 0 else ""
+    num = f"{delta:.1f}".replace(".", ",")
+    return f'<span class="chip {cls}">{sign}{num} %</span>'
+
+
+def build():
+    data = collect()
+    mps = data["marketplaces"]
+
+    # overview table: latest state per product × marketplace
+    rows = []
+    undercut = 0
+    for p in data["products"]:
+        cells = [f'<td class="name"><span class="n">{html.escape(p["name"])}</span>'
+                 f'<span class="s">{html.escape(p["sku"])}</span></td>',
+                 f'<td data-h="Eigener Preis"><span class="price own-price">{fmt(p["own"])}</span></td>']
+        by_mp = {s["marketplace"]: s for s in p["series"]}
+        is_undercut = False
+        for mp in mps:
+            s = by_mp.get(mp["key"])
+            if not s or not s["points"]:
+                err = ""
+                if s and s["lastError"]:
+                    err = f'<span class="warn">Abruf fehlgeschlagen</span>'
+                cells.append(f'<td class="na" data-h="{html.escape(mp["label"])}"><span class="since">–</span>{err}</td>')
+                continue
+            d, price = s["points"][-1]
+            delta_html = ""
+            if p["own"]:
+                delta = (price - p["own"]) / p["own"] * 100
+                delta_html = "<br>" + chip(delta)
+                if delta < -0.05:
+                    is_undercut = True
+            stale = ""
+            if s["lastError"]:
+                stale = '<br><span class="warn">letzter Abruf fehlgeschlagen</span>'
+            cells.append(f'<td data-h="{html.escape(mp["label"])}"><span class="price">{fmt(price)}</span>'
+                         f'{delta_html}<span class="since">Stand {de_date(d)}</span>{stale}</td>')
+        undercut += is_undercut
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+
+    mp_headers = "".join(
+        f'<th><span class="dot" style="background:var(--s{m["slot"]})"></span>{html.escape(m["label"])}</th>'
+        for m in mps)
+
+    cards = []
+    for i, p in enumerate(data["products"]):
+        cards.append(
+            f'<section class="card product" aria-labelledby="p{i}">'
+            f'<div class="product-head"><h2 id="p{i}">{html.escape(p["name"])}</h2>'
+            f'<span class="sku">{html.escape(p["sku"])}</span></div>'
+            f'<div class="legend" id="legend-{i}"></div>'
+            f'<div class="chart-wrap" id="chart-{i}"></div>'
+            f'<div class="days" id="days-{i}"></div></section>')
+
+    n_products = len(data["products"])
+    n_mp = len(mps)
+    tagline = (f'<b>{n_products}</b> Produkte auf <b>{n_mp}</b> Marktplätzen · '
+               f'<b>{undercut}</b> aktuell unterboten')
+    span = ""
+    if data["firstDate"]:
+        span = f'Daten seit {de_date(data["firstDate"])} · '
+
+    page = f"""<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preisradar</title>
+<style>{CSS}</style>
+</head>
+<body>
+<div class="wrap">
+<header class="head">
+  <div class="brand"><h1>Preisradar</h1><div class="tag">{tagline}</div></div>
+  <div class="meta">{span}Stand {data["generated"]}<br>
+    Export: <a href="history.csv">CSV</a> · <a href="history_excel.csv">Excel-CSV</a></div>
+</header>
+
+<div class="filters" role="group" aria-label="Zeitraum">
+  <span class="lbl">Zeitraum</span>
+  <div class="seg" id="range"></div>
+  <span class="hint" id="range-hint"></span>
+</div>
+
+<div class="card overview"><table>
+<thead><tr><th class="name">Produkt</th><th>Eigener Preis</th>{mp_headers}</tr></thead>
+<tbody>{''.join(rows)}</tbody>
+</table></div>
+
+{''.join(cards)}
+
+<p class="foot">Rot = Marktplatz ist günstiger als der eigene Preis, grün = teurer. Der Tagesbalken zeigt jeden Tag des
+gewählten Zeitraums; hellgrau = kein Preis erfasst. Preise sind der niedrigste je Tag erfasste Wert.</p>
+</div>
+<script>window.__PRICE_DATA__ = {json.dumps(data, ensure_ascii=False)};</script>
+<script>{JS}</script>
+</body>
+</html>"""
+    OUT.write_text(page, encoding="utf-8")
+    print(f"wrote {OUT}")
 
 
 def fmt(price):
     if price is None:
         return "–"
-    return f"{price:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def sparkline(points, width=560, height=120, own_price=None):
-    """points: list of (iso_date, price) -> inline SVG line chart."""
-    prices = [p for _, p in points if p is not None]
-    if len(prices) < 1:
-        return '<span class="muted">keine Daten</span>'
-    lo, hi = min(prices), max(prices)
-    if own_price is not None:
-        lo, hi = min(lo, own_price), max(hi, own_price)
-    if hi - lo < 1e-9:
-        lo, hi = lo - 1, hi + 1
-    pad = 8
-    n = max(len(points) - 1, 1)
-
-    def xy(i, price):
-        x = pad + i * (width - 2 * pad) / n
-        y = pad + (hi - price) * (height - 2 * pad) / (hi - lo)
-        return f"{x:.1f},{y:.1f}"
-
-    coords = " ".join(xy(i, p) for i, (_, p) in enumerate(points) if p is not None)
-    if len(prices) == 1:
-        cx, cy = coords.split(",")
-        line = f'<circle cx="{cx}" cy="{cy}" r="4" fill="#1d4ed8"/>'
-    else:
-        line = f'<polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="{coords}"/>'
-    own_line = ""
-    if own_price is not None:
-        y = 8 + (hi - own_price) * (height - 16) / (hi - lo)
-        own_line = (f'<line x1="{pad}" y1="{y:.1f}" x2="{width-pad}" y2="{y:.1f}" '
-                    f'stroke="#6b7280" stroke-dasharray="4 4" stroke-width="1"/>')
-    return (f'<svg class="spark" width="{width}" height="{height}" '
-            f'viewBox="0 0 {width} {height}">{own_line}{line}</svg>')
-
-
-def build():
-    conn = db.connect()
-    marketplaces = [r["marketplace"] for r in conn.execute(
-        "SELECT DISTINCT marketplace FROM matches WHERE active=1 ORDER BY marketplace")]
-    products = conn.execute("SELECT * FROM products ORDER BY sku").fetchall()
-
-    latest = {}
-    for row in conn.execute("""
-        SELECT m.sku, m.marketplace, s.price, s.scraped_at FROM snapshots s
-        JOIN matches m ON m.id = s.match_id
-        WHERE s.id IN (SELECT MAX(id) FROM snapshots WHERE price IS NOT NULL GROUP BY match_id)
-    """):
-        latest[(row["sku"], row["marketplace"])] = row
-
-    rows_html = []
-    for p in products:
-        cells = [f'<td class="name"><strong>{html.escape(p["name"])}</strong>'
-                 f'<br><span class="muted">{html.escape(p["sku"])}</span></td>',
-                 f"<td>{fmt(p['own_price'])}</td>"]
-        for mp in marketplaces:
-            snap = latest.get((p["sku"], mp))
-            if not snap:
-                cells.append('<td class="muted">–</td>')
-                continue
-            delta_html = ""
-            if p["own_price"]:
-                delta = (snap["price"] - p["own_price"]) / p["own_price"] * 100
-                cls = "delta-bad" if delta < 0 else "delta-good"
-                delta_html = f'<br><span class="{cls}">{delta:+.1f} %</span>'
-            cells.append(f"<td>{fmt(snap['price'])}{delta_html}</td>")
-        rows_html.append("<tr>" + "".join(cells) + "</tr>")
-
-    charts = []
-    for p in products:
-        for mp in marketplaces:
-            history = conn.execute("""
-                SELECT date(s.scraped_at) AS d, MIN(s.price) AS price FROM snapshots s
-                JOIN matches m ON m.id = s.match_id
-                WHERE m.sku=? AND m.marketplace=? AND s.price IS NOT NULL
-                GROUP BY d ORDER BY d
-            """, (p["sku"], mp)).fetchall()
-            if not history:
-                continue
-            points = [(r["d"], r["price"]) for r in history]
-            span = f'{points[0][0]} – {points[-1][0]}' if len(points) > 1 else points[0][0]
-            charts.append(
-                f'<div class="card"><h2>{html.escape(p["name"])} '
-                f'<span class="muted">· {html.escape(mp)} · {span}</span></h2>'
-                f'{sparkline(points, own_price=p["own_price"])}'
-                f'<div class="muted">gestrichelt = eigener Preis ({fmt(p["own_price"])})</div></div>')
-
-    now = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-    mp_headers = "".join(f"<th>{html.escape(m)}</th>" for m in marketplaces)
-    page = f"""<title>Preisradar</title>
-<style>{CSS}</style>
-<div class="wrap">
-<h1>Preisradar</h1>
-<div class="sub">Eigener Preis vs. Marktplätze · Stand: {now} · Delta negativ (rot) = Marktplatz ist günstiger
-· Export: <a href="history.csv">CSV</a> · <a href="history_excel.csv">Excel-CSV</a></div>
-<div class="scroll"><table>
-<tr><th class="name">Produkt</th><th>Eigener Preis</th>{mp_headers}</tr>
-{''.join(rows_html)}
-</table></div>
-<div class="section"><h2>Preisverlauf</h2>{''.join(charts)}</div>
-</div>"""
-    OUT.write_text(page, encoding="utf-8")
-    print(f"wrote {OUT}")
+    return f"{price:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 if __name__ == "__main__":

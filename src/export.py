@@ -3,7 +3,7 @@
 Writes two files to the project root:
   history.csv        — standard CSV (comma separator, dot decimals)
   history_excel.csv  — German-Excel flavor (semicolon separator, comma decimals,
-                       UTF-8 BOM so Excel renders umlauts correctly)
+                       dd.mm.yyyy dates, UTF-8 BOM so Excel renders umlauts correctly)
 
 Usage: python3 src/export.py
 """
@@ -37,6 +37,12 @@ def rows(conn):
                r["price"], r["own_price"], delta]
 
 
+def de_date(iso):
+    """'2026-09-03' -> '03.09.2026' for German Excel."""
+    y, m, d = iso.split("-")
+    return f"{d}.{m}.{y}"
+
+
 def de_num(value):
     """1234.5 -> '1234,5' for German Excel."""
     if value is None:
@@ -57,7 +63,7 @@ def main():
         writer = csv.writer(f, delimiter=";")
         writer.writerow(HEADER)
         for row in data:
-            writer.writerow(row[:4] + [de_num(v) for v in row[4:]])
+            writer.writerow([de_date(row[0])] + row[1:4] + [de_num(v) for v in row[4:]])
 
     print(f"exported {len(data)} rows -> history.csv, history_excel.csv")
 
